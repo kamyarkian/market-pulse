@@ -1,0 +1,19 @@
+# Java & Maven
+target/
+*.class
+*.jar
+.mvn/
+mvnw
+mvnw.cmd
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# VS Code & System
+.vscode/
+.idea/
+.DS_Store
+*.log
