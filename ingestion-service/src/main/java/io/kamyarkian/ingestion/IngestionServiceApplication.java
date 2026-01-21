@@ -1,15 +1,14 @@
-package io.kamyarkian.ingestion;
+package io.kamyarkian.ingestion;  // <--- Fixed: Matches your folder name
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling; // <--- ADDED THIS IMPORT
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableScheduling  // <--- ADDED THIS: Enables the internal timer
-public class IngestionServiceApplication {
+@EnableScheduling
+public class IngestionServiceApplication {  // <--- Fixed: Matches your file name
 
     public static void main(String[] args) {
         SpringApplication.run(IngestionServiceApplication.class, args);
     }
-
 }
