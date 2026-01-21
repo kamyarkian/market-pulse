@@ -1,41 +1,71 @@
 import json
 from kafka import KafkaConsumer
+import psycopg2  # Library for PostgreSQL database
 
-print("🧠 Smart Analyzer Started... Listening for market signals...")
+# --- Database Setup ---
+def get_db_connection():
+    return psycopg2.connect(
+        host="localhost",
+        database="market_db",
+        user="admin",
+        password="adminpassword"
+    )
 
-# 1. Connect to Kafka
+def init_db():
+    """Creates the table if it does not exist."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS market_prices (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10),
+                price DECIMAL,
+                timestamp BIGINT
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("✅ Database Connected & Table Ready.")
+    except Exception as e:
+        print(f"❌ Database Init Error: {e}")
+
+# --- Kafka Setup ---
 consumer = KafkaConsumer(
     'market-data',
     bootstrap_servers='localhost:9092',
-    auto_offset_reset='latest',  # Read only the newest data
-    value_deserializer=lambda x: x.decode('utf-8')
+    auto_offset_reset='latest',
+    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
 )
 
-# 2. Process Data Stream
-for message in consumer:
-    try:
-        # Parse JSON
-        event = json.loads(message.value)
-        
-        symbol = event.get('symbol', 'UNKNOWN')
-        price = event.get('price', 0)
-        volume = event.get('volume', 0)
-        
-        # 3. Smart Logic (Sensitivity Adjustment)
-        # Only alert if price moves significantly around 95,000
-        
-        if price > 96000:
-            print(f"🚀 SELL SIGNAL | {symbol} reached ${price:,.2f} | High Volume: {volume}")
-            
-        elif price < 95200:
-            print(f"💎 BUY SIGNAL  | {symbol} dropped to ${price:,.2f} | Good Entry!")
-            
-        else:
-            # Normal fluctuation - just log it simply
-            print(f"📊 Market Monitoring: {symbol} at ${price:,.2f}")
+# --- Main Execution ---
+if __name__ == "__main__":
+    print("🧠 Analyzer Started... Listening and Recording to DB...")
+    init_db()  # Ensure DB is ready
 
-    except json.JSONDecodeError:
-        print(f"⚠️ Raw Data: {message.value}")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
+    for message in consumer:
+        try:
+            data = message.value
+            
+            # Extract Data
+            symbol = data.get('symbol')
+            price = float(data.get('price'))
+            timestamp = data.get('timestamp')
+
+            # 1. Visual Output (Console)
+            print(f"📊 [LIVE] {symbol}: ${price:,.2f} | Saved to DB 💾")
+
+            # 2. Save to Database (Memory)
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO market_prices (symbol, price, timestamp) VALUES (%s, %s, %s)",
+                (symbol, price, timestamp)
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+
+        except Exception as e:
+            print(f"⚠️ Error processing message: {e}")
