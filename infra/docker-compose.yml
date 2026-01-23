@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # --- 1. Infrastructure: Zookeeper ---
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     hostname: zookeeper
@@ -10,7 +11,10 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - market-network
 
+  # --- 2. Infrastructure: Kafka ---
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     hostname: kafka
@@ -27,8 +31,16 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    # --- CRITICAL FIX: Healthcheck added here ---
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - market-network
 
-  # --- بخش جدید: حافظه سیستم (Database) ---
+  # --- 3. Infrastructure: PostgreSQL ---
   postgres:
     image: postgres:15-alpine
     container_name: market-postgres
@@ -40,6 +52,46 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - market-network
+
+  # --- 4. App: Ingestion Service (Java) ---
+  ingestion-service:
+    build:
+      context: ../ingestion-service
+      dockerfile: Dockerfile
+    container_name: market-ingestion
+    depends_on:
+      kafka:
+        condition: service_healthy  # Now this will work because Kafka has a healthcheck!
+    networks:
+      - market-network
+    restart: always
+    environment:
+      KAFKA_BROKER: kafka:29092
+      SPRING_PROFILES_ACTIVE: docker
+
+  # --- 5. App: Analysis Service (Python) ---
+  analysis-service:
+    build:
+      context: ../analysis-service
+      dockerfile: Dockerfile
+    container_name: market-dashboard
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8501:8501"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DB_HOST: postgres
+    networks:
+      - market-network
+    restart: always
+
+networks:
+  market-network:
+    driver: bridge
 
 volumes:
   postgres_data:

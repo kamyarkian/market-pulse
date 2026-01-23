@@ -1,64 +1,71 @@
 import streamlit as st
 import pandas as pd
-import json
-from kafka import KafkaConsumer
+import psycopg2
 import time
+import altair as alt
 
-# 1. Page Config
-st.set_page_config(page_title="Market Pulse 🚀", layout="wide")
-st.title("⚡ Real-Time Market Pulse")
+# --- 1. Page Config ---
+st.set_page_config(page_title="Market Pulse | DEBUG MODE", page_icon="⚡", layout="wide")
 
-# 2. Setup placeholders for live updates
-col1, col2 = st.columns(2)
-with col1:
-    price_metric = st.empty()
-with col2:
-    signal_metric = st.empty()
+st.title("⚡ Market Pulse: Professional Monitor")
 
-st.subheader("Live Price Chart (BTC-USD)")
-chart_holder = st.empty()
+# --- DEBUG INFO (To prove what code is running) ---
+DB_HOST = "postgres"  # This must match docker-compose service name
+st.caption(f"🔌 System Configured to connect to: **{DB_HOST}**")
 
-# 3. Connect to Kafka
-consumer = KafkaConsumer(
-    'market-data',
-    bootstrap_servers='localhost:9092',
-    auto_offset_reset='latest',
-    value_deserializer=lambda x: x.decode('utf-8')
-)
+# --- 2. Database Connection ---
+def get_data():
+    conn = psycopg2.connect(
+        host=DB_HOST,             # <--- FORCE DOCKER NETWORK
+        database="market_db",
+        user="admin",
+        password="adminpassword"
+    )
+    query = "SELECT * FROM market_prices ORDER BY timestamp DESC LIMIT 150"
+    df = pd.read_sql(query, conn)
+    conn.close()
+    
+    df = df.sort_values(by="timestamp")
+    df = df[df['price'] > 0]
+    df['time'] = pd.to_datetime(df['timestamp'], unit='ms')
+    return df
 
-# 4. Data Buffer for the Chart
-data = []
+placeholder = st.empty()
 
-# 5. Continuous Loop
-try:
-    for message in consumer:
-        # Parse Data
-        event = json.loads(message.value)
-        price = event.get('price', 0)
-        symbol = event.get('symbol', 'BTC-USD')
+# --- 3. Main Loop ---
+while True:
+    try:
+        # Create a clean container for errors to prevent stacking
+        err_placeholder = st.empty() 
         
-        # Add to history (keep last 50 points)
-        data.append(price)
-        if len(data) > 50:
-            data.pop(0)
+        df = get_data()
+
+        with placeholder.container():
+            # KPI Metrics
+            latest = df.iloc[-1]['price']
+            prev = df.iloc[-2]['price'] if len(df) > 1 else latest
+            delta = latest - prev
             
-        # Update Metrics
-        price_metric.metric(label="Current Price", value=f"${price:,.2f}")
-        
-        # Logic Signal
-        if price > 96000:
-            signal_metric.error("🔴 SELL SIGNAL! (Overbought)")
-        elif price < 95200:
-            signal_metric.success("🟢 BUY SIGNAL! (Oversold)")
-        else:
-            signal_metric.info("⚪ HOLD (Market Stable)")
+            c1, c2 = st.columns([1, 3])
+            c1.metric("💰 BTC Price", f"${latest:,.2f}", f"{delta:,.2f}")
+            
+            # Status Badge
+            if latest > 98000: c2.error("🔴 OVERBOUGHT")
+            elif latest < 88000: c2.success("🟢 OVERSOLD")
+            else: c2.info("⚪ NEUTRAL")
 
-        # Update Chart
-        chart_data = pd.DataFrame(data, columns=["Price"])
-        chart_holder.line_chart(chart_data)
-        
-        # Small sleep to prevent UI freezing
-        time.sleep(0.1)
+            # Pro Chart
+            chart = alt.Chart(df).mark_line(color='#00FF00').encode(
+                x=alt.X('time:T', title='Time'),
+                y=alt.Y('price:Q', scale=alt.Scale(zero=False), title='Price')
+            ).properties(height=400).interactive()
+            
+            st.altair_chart(chart, use_container_width=True)
 
-except Exception as e:
-    st.error(f"Error: {e}")
+    except Exception as e:
+        # This shows error ONLY if connection fails
+        # If you see "localhost" here, Docker is running old code!
+        st.error(f"❌ Connection Failed: {e}")
+        time.sleep(2)
+        
+    time.sleep(1)
