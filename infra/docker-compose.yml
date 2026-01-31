@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # --- 1. Infrastructure: Zookeeper ---
   zookeeper:
@@ -85,7 +87,9 @@ services:
       - DB_HOST=postgres
       - DB_USER=admin
       - DB_PASSWORD=adminpassword
-      - GEMINI_API_KEY=${GEMINI_API_KEY}  # <--- اتصال به فایل .env
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}      # <--- Added Bridge for Token
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}  # <--- Added Bridge for Chat ID
     networks:
       - market-network
     restart: always
