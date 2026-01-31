@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # --- 1. Infrastructure: Zookeeper ---
   zookeeper:
@@ -31,7 +29,7 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    # --- CRITICAL FIX: Healthcheck added here ---
+    # --- Healthcheck for stability ---
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -63,7 +61,7 @@ services:
     container_name: market-ingestion
     depends_on:
       kafka:
-        condition: service_healthy  # Now this will work because Kafka has a healthcheck!
+        condition: service_healthy
     networks:
       - market-network
     restart: always
@@ -71,7 +69,7 @@ services:
       KAFKA_BROKER: kafka:29092
       SPRING_PROFILES_ACTIVE: docker
 
-  # --- 5. App: Analysis Service (Python) ---
+  # --- 5. App: Analysis Service (Python / YAMIN Sentinel) ---
   analysis-service:
     build:
       context: ../analysis-service
@@ -83,8 +81,11 @@ services:
     ports:
       - "8501:8501"
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      DB_HOST: postgres
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - DB_HOST=postgres
+      - DB_USER=admin
+      - DB_PASSWORD=adminpassword
+      - GEMINI_API_KEY=${GEMINI_API_KEY}  # <--- اتصال به فایل .env
     networks:
       - market-network
     restart: always
