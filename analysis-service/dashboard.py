@@ -3,20 +3,32 @@ import pandas as pd
 import psycopg2
 import time
 import altair as alt
+import os
 from datetime import datetime
 
-# --- 1. Page Config ---
-st.set_page_config(page_title="HCDS Prop-Trader | Paper Mode", page_icon="🏦", layout="wide")
+# --- 1. CONFIGURATION (The Rules) ---
+# YAMIN Core Rules: Precision & Protection
+STOP_LOSS_PCT = 0.02   # 2% Max Loss (Wolf Survival Instinct)
+TAKE_PROFIT_PCT = 0.04 # 4% Target Profit (Wolf Hunt)
+RSI_BUY = 30.0         # Sniper Entry
+RSI_SELL = 70.0        # Sniper Exit
 
-# --- 2. SESSION STATE (The Virtual Wallet) ---
+# --- 2. BRANDING IDENTITY ---
+SYSTEM_NAME = "YAMIN Core"
+NODE_NAME = "Sentinel Node"
+ICON = "🐺"
+
+st.set_page_config(page_title=f"{SYSTEM_NAME} | {NODE_NAME}", page_icon=ICON, layout="wide")
+
+# --- 3. SESSION STATE ---
 if 'balance' not in st.session_state:
-    st.session_state.balance = 50000.00  # Start with $50k (Prop Firm Standard)
+    st.session_state.balance = 50000.00
 if 'position' not in st.session_state:
-    st.session_state.position = None     # None or {'entry_price': 0.0, 'amount': 0.0}
+    st.session_state.position = None 
 if 'trades' not in st.session_state:
-    st.session_state.trades = []         # History log
+    st.session_state.trades = []
 
-# --- 3. LOGIC: RSI Algorithm ---
+# --- 4. LOGIC: RSI Algorithm ---
 def calculate_rsi(data, period=14):
     delta = data['price'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -25,36 +37,42 @@ def calculate_rsi(data, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# --- 4. DATA: Fetch from Postgres ---
+# --- 5. DATA FETCH (SECURE) ---
 @st.cache_data(ttl=1)
 def get_data():
+    # Credentials from Environment or Default
+    db_user = os.getenv('DB_USER', 'admin')
+    db_password = os.getenv('DB_PASSWORD', 'adminpassword')
+    
     conn = psycopg2.connect(
-        host="postgres",
-        database="market_db",
-        user="admin",
-        password="adminpassword"
+        host="postgres", 
+        database="market_db", 
+        user=db_user, 
+        password=db_password
     )
     query = "SELECT * FROM market_prices ORDER BY timestamp DESC LIMIT 300"
     df = pd.read_sql(query, conn)
     conn.close()
-    
     df = df.sort_values(by="timestamp")
     df['time'] = pd.to_datetime(df['timestamp'], unit='ms')
     df['price'] = df['price'].astype(float)
     df['rsi'] = calculate_rsi(df)
     return df
 
-# --- 5. UI LAYOUT ---
-st.title("🏦 HCDS Paper-Trading Terminal")
-st.caption("Simulating a $50,000 Prop Firm Challenge based on RSI Logic.")
+# --- 6. UI LAYOUT ---
+# Header Area
+c1, c2 = st.columns([1, 6])
+with c1:
+    st.title(ICON)
+with c2:
+    st.title(f"{SYSTEM_NAME}: {NODE_NAME}")
+    st.caption(f"Identity: The Right Hand (Wolf Algorithm) | Strategy: RSI ({RSI_BUY}/{RSI_SELL}) | Risk Shield: Active")
 
-# Top Metrics Row (Wallet Status)
 metric_ph = st.empty()
-
 st.markdown("---")
 chart_ph = st.empty()
 
-# --- 6. TRADING ENGINE LOOP ---
+# --- 7. TRADING ENGINE ---
 while True:
     try:
         df = get_data()
@@ -65,95 +83,105 @@ while True:
             current_rsi = latest['rsi']
             timestamp = latest['time']
 
-            # --- A. TRADING LOGIC (The Brain) ---
             trade_action = "HOLD"
-            trade_amount = 0.5  # Fixed Lot Size (0.5 BTC)
+            trade_amount = 0.5 
 
-            # 1. BUY SIGNAL (RSI < 30)
-            if current_rsi < 30 and st.session_state.position is None:
-                cost = current_price * trade_amount
-                if st.session_state.balance >= cost:
-                    st.session_state.position = {'entry_price': current_price, 'amount': trade_amount}
-                    st.session_state.balance -= cost
-                    
-                    st.session_state.trades.append({
-                        "Time": timestamp, "Type": "BUY", "Price": current_price, "PnL": 0
-                    })
-                    trade_action = "EXECUTED BUY"
-
-            # 2. SELL SIGNAL (RSI > 70)
-            elif current_rsi > 70 and st.session_state.position is not None:
+            # --- A. RISK MANAGEMENT (High Priority) ---
+            if st.session_state.position is not None:
                 entry = st.session_state.position['entry_price']
-                amount = st.session_state.position['amount']
-                revenue = current_price * amount
-                profit = revenue - (entry * amount)
+                pct_change = (current_price - entry) / entry
                 
-                st.session_state.balance += revenue
-                st.session_state.position = None # Close position
+                # STOP LOSS
+                if pct_change <= -STOP_LOSS_PCT:
+                    revenue = current_price * st.session_state.position['amount']
+                    profit = revenue - (entry * st.session_state.position['amount'])
+                    st.session_state.balance += revenue
+                    st.session_state.position = None
+                    st.session_state.trades.append({
+                        "Time": timestamp, "Type": "🛑 STOP LOSS", "Price": current_price, "PnL": profit
+                    })
+                    trade_action = "EMERGENCY EXIT"
                 
-                st.session_state.trades.append({
-                    "Time": timestamp, "Type": "SELL", "Price": current_price, "PnL": profit
-                })
-                trade_action = "EXECUTED SELL"
+                # TAKE PROFIT
+                elif pct_change >= TAKE_PROFIT_PCT:
+                    revenue = current_price * st.session_state.position['amount']
+                    profit = revenue - (entry * st.session_state.position['amount'])
+                    st.session_state.balance += revenue
+                    st.session_state.position = None
+                    st.session_state.trades.append({
+                        "Time": timestamp, "Type": "💰 TAKE PROFIT", "Price": current_price, "PnL": profit
+                    })
+                    trade_action = "TARGET HIT"
 
-            # --- B. CALCULATE REAL-TIME EQUITY ---
+            # --- B. STANDARD ENTRY/EXIT LOGIC ---
+            if trade_action == "HOLD":
+                # BUY
+                if current_rsi < RSI_BUY and st.session_state.position is None:
+                    cost = current_price * trade_amount
+                    if st.session_state.balance >= cost:
+                        st.session_state.position = {'entry_price': current_price, 'amount': trade_amount}
+                        st.session_state.balance -= cost
+                        st.session_state.trades.append({
+                            "Time": timestamp, "Type": "🔵 BUY", "Price": current_price, "PnL": 0
+                        })
+                        trade_action = "OPEN BUY"
+
+                # SELL
+                elif current_rsi > RSI_SELL and st.session_state.position is not None:
+                    entry = st.session_state.position['entry_price']
+                    revenue = current_price * st.session_state.position['amount']
+                    profit = revenue - (entry * st.session_state.position['amount'])
+                    st.session_state.balance += revenue
+                    st.session_state.position = None 
+                    st.session_state.trades.append({
+                        "Time": timestamp, "Type": "🟠 SELL", "Price": current_price, "PnL": profit
+                    })
+                    trade_action = "CLOSE SELL"
+
+            # --- C. UPDATE UI ---
             equity = st.session_state.balance
             unrealized_pnl = 0.0
+            pnl_pct = 0.0
             
             if st.session_state.position:
-                # If we hold BTC, equity = Cash + Current Value of BTC
                 current_value = st.session_state.position['amount'] * current_price
                 entry_cost = st.session_state.position['amount'] * st.session_state.position['entry_price']
                 unrealized_pnl = current_value - entry_cost
                 equity += current_value
+                pnl_pct = (unrealized_pnl / entry_cost) * 100
 
-            # --- C. UPDATE UI ---
             with metric_ph.container():
-                # Wallet Metrics
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("💰 Account Equity", f"${equity:,.2f}", delta=f"{unrealized_pnl:,.2f}")
-                m2.metric("💵 Cash Balance", f"${st.session_state.balance:,.2f}")
+                m1.metric("💰 YAMIN Equity", f"${equity:,.2f}", delta=f"{unrealized_pnl:,.2f}")
                 
-                # Position Status
                 if st.session_state.position:
-                    entry = st.session_state.position['entry_price']
-                    m3.metric("OPEN POSITION", "0.5 BTC", f"Entry: ${entry:,.2f}")
+                    m2.metric("PnL %", f"{pnl_pct:.2f}%", f"Entry: ${st.session_state.position['entry_price']:,.0f}")
                 else:
-                    m3.metric("OPEN POSITION", "NONE", "Waiting for Signal")
+                    m2.metric("PnL %", "0.00%", "Flat")
 
-                # RSI Status
-                rsi_state = "NEUTRAL"
-                if current_rsi < 30: rsi_state = "OVERSOLD (BUY ZONE)"
-                elif current_rsi > 70: rsi_state = "OVERBOUGHT (SELL ZONE)"
-                m4.metric("RSI Indicator", f"{current_rsi:.1f}", rsi_state)
+                m3.metric("System Status", "PROTECTED", f"SL: -2% | TP: +4%")
+
+                rsi_val = f"{current_rsi:.1f}"
+                if current_rsi < RSI_BUY: m4.error(f"RSI: {rsi_val} (HUNT)")
+                elif current_rsi > RSI_SELL: m4.success(f"RSI: {rsi_val} (EXIT)")
+                else: m4.metric("RSI", rsi_val)
 
             with chart_ph.container():
-                # Charts
-                price_chart = alt.Chart(df).mark_line(color='#00FFAA').encode(
-                    x=alt.X('time:T', axis=alt.Axis(format='%H:%M:%S')),
-                    y=alt.Y('price:Q', scale=alt.Scale(zero=False)),
-                ).properties(height=300, title=f"BTC Price: ${current_price:,.2f}")
+                base = alt.Chart(df).encode(x=alt.X('time:T', axis=alt.Axis(format='%H:%M', title='')))
+                price = base.mark_line(color='#00FFAA').encode(y=alt.Y('price:Q', scale=alt.Scale(zero=False))).properties(height=300, title=f"BTC: ${current_price:,.2f}")
+                rsi = base.mark_line(color='#FFAA00').encode(y=alt.Y('rsi:Q', scale=alt.Scale(domain=[0, 100]))).properties(height=150, title="RSI Momentum")
+                line_70 = alt.Chart(pd.DataFrame({'y': [RSI_SELL]})).mark_rule(color='red').encode(y='y')
+                line_30 = alt.Chart(pd.DataFrame({'y': [RSI_BUY]})).mark_rule(color='green').encode(y='y')
 
-                rsi_chart = alt.Chart(df).mark_line(color='#FFAA00').encode(
-                    x=alt.X('time:T', axis=alt.Axis(labels=False)),
-                    y=alt.Y('rsi:Q', scale=alt.Scale(domain=[0, 100])),
-                ).properties(height=150, title="RSI Momentum")
+                st.altair_chart(price & (rsi + line_70 + line_30), use_container_width=True)
 
-                # Overlay Thresholds
-                rule_top = alt.Chart(pd.DataFrame({'y': [70]})).mark_rule(color='red', strokeDash=[5,5]).encode(y='y')
-                rule_bot = alt.Chart(pd.DataFrame({'y': [30]})).mark_rule(color='green', strokeDash=[5,5]).encode(y='y')
-
-                st.altair_chart(price_chart & (rsi_chart + rule_top + rule_bot), use_container_width=True)
-
-                # Trade History Table
                 if st.session_state.trades:
-                    st.subheader("📜 Trade Log")
+                    st.subheader("📜 YAMIN Trade Ledger")
                     trade_df = pd.DataFrame(st.session_state.trades)
-                    # Show latest trades first
-                    st.dataframe(trade_df.iloc[::-1].head(5), use_container_width=True)
+                    st.dataframe(trade_df.style.format({"Price": "${:,.2f}", "PnL": "${:,.2f}"}), use_container_width=True)
 
         time.sleep(1)
 
     except Exception as e:
-        st.error(f"System Initializing... {e}")
+        st.warning("Establishing Link to YAMIN Core...")
         time.sleep(2)
