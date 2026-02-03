@@ -1,264 +1,272 @@
 import streamlit as st
 import pandas as pd
-import psycopg2
 import time
-import altair as alt
+import plotly.graph_objects as go
+import yfinance as yf
+import requests
 import os
-import urllib.parse
-import urllib.request
-import json
-import google.generativeai as genai
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from dotenv import load_dotenv
 
 # ==========================================
-# 1. SYSTEM CONFIGURATION & CREDENTIALS
+# 1. SECURITY & INFRA UPLINK 🔐
 # ==========================================
-# --- TRADING SETTINGS ---
-STOP_LOSS_PCT = 0.02
-TAKE_PROFIT_PCT = 0.04
-RSI_PERIOD = 14
-RSI_BUY = 35.0   # Buy Zone
-RSI_SELL = 65.0  # Sell Zone
+current_dir = Path.cwd()
+env_path = current_dir / 'infra' / '.env'
+load_dotenv(dotenv_path=env_path)
 
-# --- MACD SETTINGS ---
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
-
-# --- TELEGRAM SECRETS (Hardcoded) ---
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID =os.getenv('TELEGRAM_CHAT_ID') 
-if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-    print("⚠️ WARNING: Telegram keys are missing in .env file!")
-
-# --- DATABASE CREDENTIALS ---
-DB_HOST = "postgres"
-DB_NAME = "market_db"
-DB_USER = os.getenv('DB_USER', 'admin')
-DB_PASS = os.getenv('DB_PASSWORD', 'adminpassword')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 # ==========================================
-# 2. TELEGRAM MODULE (Standard Lib) 🔔
+# 2. SYSTEM CONFIGURATION (WALL STREET)
 # ==========================================
-def send_telegram_alert(message):
-    """Sends a notification to your phone using standard Python libraries."""
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-        # Encode data and send request
-        data_encoded = urllib.parse.urlencode(data).encode("utf-8")
-        req = urllib.request.Request(url, data=data_encoded)
-        with urllib.request.urlopen(req) as response:
-            pass # Message sent successfully
-    except Exception as e:
-        print(f"Telegram Error: {e}")
+SYSTEM_NAME = "YAMIN"
+VERSION = "v18.0 (LIQUIDITY TRACKER)"
+AUTHOR = "KAMYAR KIAN . IO"
+
+# INSTITUTIONAL COLOR PALETTE
+ICE_WHITE = "#FFFFFF"
+ACCENT_CYAN = "#00E5FF" 
+DEEP_BLUE = "#2962FF"
+BG_VOID = "#050608"
+
+# WALL STREET CLASSIC GREEN & RED
+WS_GREEN = "#089981" # Institutional Green
+WS_RED = "#F23645"   # Institutional Red
 
 # ==========================================
-# 3. UI SETUP (PROFESSIONAL THEME)
+# 3. UI ARCHITECTURE (CSS)
 # ==========================================
-SYSTEM_NAME = "YAMIN Core"
-NODE_NAME = "Sentinel Node"
-ICON = "🐺"
+st.set_page_config(page_title=f"YAMIN | {AUTHOR}", page_icon="🐺", layout="wide", initial_sidebar_state="collapsed")
 
-st.set_page_config(page_title=SYSTEM_NAME, page_icon=ICON, layout="wide")
-st.markdown("""
+st.markdown(f"""
     <style>
-        .stMetric {background-color: #0e1117; padding: 10px; border-radius: 5px; border: 1px solid #262730;}
-        .stAlert {background-color: #1c2026; border: 1px solid #363b45; color: #ffffff;}
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@500;700;800&display=swap');
+    
+    .stApp {{ background-color: {BG_VOID}; font-family: 'Rajdhani', sans-serif; overflow: hidden; }}
+    
+    /* 1. YAMIN CENTERED + PULSE ALIGNMENT */
+    .title-flex-container {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 5px;
+        margin-bottom: 20px;
+    }}
+    h1 {{
+        font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 85px !important;
+        letter-spacing: 12px; color: {ICE_WHITE}; margin: 0; line-height: 1;
+        text-shadow: 0 0 50px rgba(255, 255, 255, 0.4);
+    }}
+
+    .pulse-y {{
+        height: 25px; width: 25px; background-color: {ACCENT_CYAN}; border-radius: 50%;
+        box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.7);
+        animation: pulse 1.5s infinite; margin-right: 20px;
+    }}
+    @keyframes pulse {{
+        0% {{ transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.7); }}
+        70% {{ transform: scale(1); box-shadow: 0 0 0 20px rgba(0, 229, 255, 0); }}
+        100% {{ transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); }}
+    }}
+
+    /* 2. LIQUIDITY CLOCKS (PRO 4-CITY GRID) */
+    .vertical-clocks {{
+        position: absolute;
+        top: 5px; 
+        right: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px; 
+        font-family: 'JetBrains Mono';
+        font-size: 14px; 
+        color: #444; /* Default Dim */
+        text-align: right;
+        z-index: 100;
+        background: rgba(0,0,0,0.4);
+        padding: 12px 18px;
+        border-right: 3px solid {ACCENT_CYAN};
+        border-radius: 4px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }}
+    
+    /* Dynamic Clock Colors based on Market Status */
+    .market-open {{ color: #888; }}
+    .market-open b {{ color: {WS_GREEN}; font-weight: 800; font-size: 16px; margin-left: 10px; text-shadow: 0 0 10px rgba(8, 153, 129, 0.5); }}
+    
+    .market-closed {{ color: #444; }}
+    .market-closed b {{ color: #555; font-weight: 800; font-size: 16px; margin-left: 10px; }}
+
+    /* CHARTS CONTAINER */
+    div.stPlotlyChart {{
+        background: rgba(15, 20, 25, 0.8); border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px; transition: 0.3s ease; padding: 5px;
+    }}
+    div.stPlotlyChart:hover {{ border: 1px solid {ACCENT_CYAN}; box-shadow: 0 0 20px rgba(0, 229, 255, 0.1); }}
+    
+    /* METRICS */
+    div[data-testid="stMetric"] {{
+        background: rgba(255, 255, 255, 0.02); border-left: 3px solid {DEEP_BLUE};
+        border-radius: 6px; padding: 10px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 4. SESSION STATE MANAGEMENT
+# 4. BACKEND LOGIC (Market Liquidity Hours)
 # ==========================================
-if 'balance' not in st.session_state: st.session_state.balance = 50000.00
-if 'position' not in st.session_state: st.session_state.position = None 
-if 'trades' not in st.session_state: st.session_state.trades = []
-
-# ==========================================
-# 5. NEURAL LINK (AI CORE)
-# ==========================================
-def consult_neural_core(price, rsi, macd, macd_signal, balance):
-    api_key = os.getenv('GEMINI_API_KEY')
-    if not api_key: return False, "API Key Missing"
-    genai.configure(api_key=api_key)
+def get_market_clocks():
+    utc = datetime.now(timezone.utc)
     
-    # Priority: Flash 2.0 -> Lite -> Latest
-    model_priority_list = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
-    trend = "BULLISH" if macd > macd_signal else "BEARISH"
-    
-    for model_name in model_priority_list:
-        try:
-            model = genai.GenerativeModel(model_name)
-            prompt = f"Act as YAMIN Trading AI. Market Data: Price=${price}, RSI={rsi:.1f}, Trend={trend}. Provide 1 concise tactical sentence."
-            response = model.generate_content(prompt)
-            return True, f"**[{model_name}]** {response.text}"
-        except: continue 
-    return False, "AI Systems Busy/Limit Reached."
+    # Define Time Deltas
+    tz_syd = utc + timedelta(hours=11)
+    tz_tyo = utc + timedelta(hours=9)
+    tz_lon = utc
+    tz_nyc = utc - timedelta(hours=5)
 
-# ==========================================
-# 6. DATA ENGINE
-# ==========================================
-def get_data():
+    # Market Open Logic (Roughly standard business hours for liquidity)
+    def is_open(tz_time, open_h, close_h):
+        return open_h <= tz_time.hour < close_h and tz_time.weekday() < 5 # Mon-Fri
+
+    # Generate 12h format strings (e.g., "10:30" without AM/PM)
+    # Check if market is open
+    return [
+        {"name": "SYDNEY", "time": tz_syd.strftime("%I:%M"), "open": is_open(tz_syd, 10, 16)},
+        {"name": "TOKYO", "time": tz_tyo.strftime("%I:%M"), "open": is_open(tz_tyo, 9, 15)},
+        {"name": "LONDON", "time": tz_lon.strftime("%I:%M"), "open": is_open(tz_lon, 8, 16)},
+        {"name": "NEW YORK", "time": tz_nyc.strftime("%I:%M"), "open": is_open(tz_nyc, 9, 16)} # 9:30 simplified to 9
+    ]
+
+def broadcast_signal(msg, token, chat_id):
+    if not token or not chat_id: return
     try:
-        conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASS)
-        query = "SELECT * FROM market_prices ORDER BY timestamp DESC LIMIT 300"
-        df = pd.read_sql(query, conn)
-        conn.close()
-        
-        df = df.sort_values(by="timestamp")
-        df['price'] = df['price'].astype(float)
-        df['time'] = pd.to_datetime(df['timestamp'], unit='ms')
-        
-        # RSI Calculation
-        delta = df['price'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(RSI_PERIOD).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(RSI_PERIOD).mean()
-        rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
-        df['rsi'] = df['rsi'].fillna(50)
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+    except: pass
 
-        # MACD Calculation
-        ema12 = df['price'].ewm(span=MACD_FAST, adjust=False).mean()
-        ema26 = df['price'].ewm(span=MACD_SLOW, adjust=False).mean()
-        df['macd'] = ema12 - ema26
-        df['macd_signal'] = df['macd'].ewm(span=MACD_SIGNAL, adjust=False).mean()
+@st.cache_data(ttl=30)
+def fetch_market_data():
+    try:
+        df = yf.download("BTC-CAD", period="3d", interval="15m", progress=False)
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        df = df.reset_index().rename(columns={"Datetime": "time", "Date": "time", "Close": "price", "Open": "open", "High": "high", "Low": "low"})
+        df['price'] = df['price'].astype(float)
         
-        return df
+        # Tech Indicators
+        delta = df['price'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df['rsi'] = 100 - (100 / (1 + (gain / loss)))
+        df['macd'] = df['price'].ewm(span=12).mean() - df['price'].ewm(span=26).mean()
+        df['macd_h'] = df['macd'] - df['macd'].ewm(span=9).mean()
+        return df.tail(80) 
     except: return pd.DataFrame()
 
 # ==========================================
-# 7. MAIN DASHBOARD LOGIC
+# 5. TITAN INTERFACE (PRO EDITION)
 # ==========================================
+
+df = fetch_market_data()
+current_price = df.iloc[-1]['price'] if not df.empty else 0
+
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header(f"{ICON} Neural Link")
-    st.caption("Mode: RSI + MACD Fusion")
+    st.markdown("### 🐺 NEURAL LINK")
+    st.caption("TELEGRAM BROADCAST SYSTEM")
     
-    if st.button("🧠 Analyze Market", use_container_width=True):
-        temp_df = get_data()
-        if not temp_df.empty:
-            last = temp_df.iloc[-1]
-            success, msg = consult_neural_core(last['price'], last['rsi'], last['macd'], last['macd_signal'], st.session_state.balance)
-            if success: st.info(msg)
-            else: st.error(msg)
-            
-            # TELEGRAM CONNECTIVITY TEST
+    active_token = TELEGRAM_TOKEN
+    active_chat = TELEGRAM_CHAT_ID
+
+    if active_token and active_chat:
+        st.success("SECURE UPLINK ESTABLISHED (ENV)")
+    else:
+        st.error("ENV KEYS MISSING")
+        active_token = st.text_input("Enter Bot Token", type="password")
+        active_chat = st.text_input("Enter Chat ID")
+
+    if st.button("📡 TEST CONNECTION"):
+        if active_token and active_chat:
             try:
-                send_telegram_alert(f"🐺 **YAMIN ALERT SYSTEM**\nConnectivity Check: **ONLINE**\nCurrent Price: ${last['price']:,.2f}")
-                st.toast("Test Alert Sent to Telegram!", icon="✅")
-            except:
-                st.error("Telegram Connection Failed")
-            
-    st.markdown("---")
-    st.metric("System Status", "ARMED & LISTENING")
+                msg = f"🐺 *YAMIN LIVE FEED*\nSystem Online.\nBTC/CAD: ${current_price:,.2f}"
+                url = f"https://api.telegram.org/bot{active_token}/sendMessage"
+                resp = requests.post(url, json={"chat_id": active_chat, "text": msg, "parse_mode": "Markdown"})
+                if resp.status_code == 200: st.toast("UPLINK SUCCESS", icon="✅")
+                else: st.error("FAILED TO CONNECT")
+            except: st.error("NETWORK ERROR")
+        else: st.warning("NEED KEYS")
 
-# --- HEADER ---
-col1, col2 = st.columns([1, 8])
-with col1: st.title(ICON)
-with col2: st.title(f"{SYSTEM_NAME}")
-st.markdown("---")
+# --- SMART LIQUIDITY CLOCKS (PRO 4-CITY) ---
+clks = get_market_clocks()
+clock_html = "<div class='vertical-clocks'>"
+for city in clks:
+    # Assign green class if market open, gray if closed
+    status_class = "market-open" if city["open"] else "market-closed"
+    clock_html += f"<div class='{status_class}'>{city['name']} <b>{city['time']}</b></div>"
+clock_html += "</div>"
+st.markdown(clock_html, unsafe_allow_html=True)
 
-# --- PLACEHOLDERS ---
-metrics_ph = st.empty()
-charts_ph = st.empty()
-log_ph = st.empty()
+# --- PERFECT CENTERED TITLE ---
+st.markdown(f"""
+    <div class='title-flex-container'>
+        <div class='pulse-y'></div><h1>{SYSTEM_NAME}</h1>
+    </div>
+""", unsafe_allow_html=True)
 
-# --- REAL-TIME LOOP ---
-while True:
-    df = get_data()
-    if not df.empty and 'time' in df.columns:
-        latest = df.iloc[-1]
-        price = latest['price']
-        rsi = latest['rsi']
-        macd = latest['macd']
-        signal = latest['macd_signal']
-        timestamp = latest['time']
+# --- METRICS & DECISION ROW ---
+c_met1, c_met2, c_sig = st.columns([3, 3, 4])
 
-        # Logic Flags
-        is_oversold = rsi < RSI_BUY
-        is_bullish = macd > signal
-        is_overbought = rsi > RSI_SELL
-        is_bearish = macd < signal
+if not df.empty:
+    last = df.iloc[-1]
+    
+    # AI Decision
+    decision = "HOLD"; dec_color = "#444"
+    if last['rsi'] < 35: 
+        decision = "BUY"; dec_color = WS_GREEN
+        if active_token: broadcast_signal(f"🐺 **YAMIN ALERT**\n🟢 Signal: BUY\nPrice: ${last['price']:,.2f}", active_token, active_chat)
+    elif last['rsi'] > 65: 
+        decision = "SELL"; dec_color = WS_RED
 
-        # --- EXECUTION LOGIC ---
-        if st.session_state.position:
-            entry = st.session_state.position['entry_price']
-            pct = (price - entry) / entry
-            
-            # STOP LOSS
-            if pct <= -STOP_LOSS_PCT:
-                st.session_state.balance += price * 0.5
-                st.session_state.position = None
-                pnl = (price - entry)*0.5
-                msg = f"🛑 **STOP LOSS EXECUTED**\nPrice: ${price:,.2f}\nPnL: ${pnl:.2f} ({pct*100:.2f}%)"
-                st.session_state.trades.append({"Time": timestamp, "Type": "STOP LOSS", "Price": price, "PnL": pnl})
-                send_telegram_alert(msg) 
-            
-            # TAKE PROFIT
-            elif pct >= TAKE_PROFIT_PCT:
-                st.session_state.balance += price * 0.5
-                st.session_state.position = None
-                pnl = (price - entry)*0.5
-                msg = f"💰 **TAKE PROFIT EXECUTED**\nPrice: ${price:,.2f}\nPnL: +${pnl:.2f} (+{pct*100:.2f}%)"
-                st.session_state.trades.append({"Time": timestamp, "Type": "TAKE PROFIT", "Price": price, "PnL": pnl})
-                send_telegram_alert(msg)
-        
-        # ENTRY SIGNAL (Sniper Mode)
-        if not st.session_state.position and is_oversold and is_bullish:
-            if st.session_state.balance > (price*0.5):
-                st.session_state.position = {'entry_price': price, 'amount': 0.5}
-                st.session_state.balance -= (price*0.5)
-                msg = f"🔵 **BUY SIGNAL DETECTED**\nEntry Price: ${price:,.2f}\nRSI: {rsi:.1f} | MACD: Bullish"
-                st.session_state.trades.append({"Time": timestamp, "Type": "LONG ENTRY", "Price": price, "PnL": 0.0})
-                send_telegram_alert(msg)
-        
-        # EXIT SIGNAL (Smart Exit)
-        elif st.session_state.position and (is_overbought or is_bearish):
-            entry = st.session_state.position['entry_price']
-            st.session_state.balance += price * 0.5
-            st.session_state.position = None
-            pnl = (price - entry)*0.5
-            msg = f"🟠 **SELL SIGNAL DETECTED**\nExit Price: ${price:,.2f}\nPnL: ${pnl:.2f}\nRSI: {rsi:.1f}"
-            st.session_state.trades.append({"Time": timestamp, "Type": "MANUAL EXIT", "Price": price, "PnL": pnl})
-            send_telegram_alert(msg)
+    with c_met1:
+        st.metric("EQUITY", f"$10,000.00")
+        st.metric("RSI STRENGTH", f"{last['rsi']:.1f}")
+    
+    with c_met2:
+        st.metric("BTC PRICE", f"${last['price']:,.0f}")
+        st.metric("AI SENTIMENT", "BULLISH" if last['macd_h'] > 0 else "BEARISH")
 
-        # --- RENDER UI ---
-        with metrics_ph.container():
-            m1, m2, m3, m4 = st.columns(4)
-            equity = st.session_state.balance
-            if st.session_state.position: equity += (0.5 * price - 0.5 * st.session_state.position['entry_price'])
-            
-            m1.metric("Total Equity", f"${equity:,.2f}")
-            m2.metric("Market Trend", "BULLISH 🟢" if is_bullish else "BEARISH 🔴")
-            m3.metric("RSI Momentum", f"{rsi:.1f}")
-            m4.metric("Alert System", "ONLINE")
+    with c_sig:
+        st.markdown(f"""
+            <div style='border: 2px solid {dec_color}; border-radius: 8px; text-align: center; padding: 15px; background: rgba(0,0,0,0.6); box-shadow: 0 0 30px {dec_color}30; margin-top: 15px;'>
+                <div style='color:#888; font-size:12px; font-family:JetBrains Mono;'>DECISION MATRIX</div>
+                <div style='color:{dec_color}; font-size:40px; font-weight:800; letter-spacing:2px;'>{decision}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-        with charts_ph.container():
-            base = alt.Chart(df).encode(x=alt.X('time:T', axis=alt.Axis(format='%H:%M:%S', title='')))
-            
-            # Price Chart
-            c1 = base.mark_line(color='#00FFAA').encode(y=alt.Y('price:Q', scale=alt.Scale(zero=False))).properties(height=250, title="Price Action")
-            
-            # RSI Chart
-            c2 = base.mark_line(color='#FFAA00').encode(y=alt.Y('rsi:Q', scale=alt.Scale(domain=[0, 100]))).properties(height=120, title="RSI Index")
-            line_buy = alt.Chart(pd.DataFrame({'y': [RSI_BUY]})).mark_rule(color='green', strokeDash=[5,5]).encode(y='y')
-            line_sell = alt.Chart(pd.DataFrame({'y': [RSI_SELL]})).mark_rule(color='red', strokeDash=[5,5]).encode(y='y')
+    st.markdown("<br>", unsafe_allow_html=True)
 
-            # MACD Chart
-            c3_macd = base.mark_line(color='#00AAFF').encode(y='macd:Q')
-            c3_signal = base.mark_line(color='#FF5500').encode(y='macd_signal:Q')
-            c3 = (c3_macd + c3_signal).properties(height=120, title="MACD Interceptor")
+    # --- PERFECT FIT CHARTS (WALL STREET COLORS) ---
+    
+    # 1. MAIN PRICE ACTION
+    fig_p = go.Figure(data=[go.Candlestick(x=df['time'], open=df['open'], high=df['high'], low=df['low'], close=df['price'], increasing_line_color=WS_GREEN, decreasing_line_color=WS_RED)])
+    fig_p.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#666'), margin=dict(t=0, b=0, l=0, r=0), xaxis=dict(showgrid=False, rangeslider_visible=False, visible=False), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'), height=400)
+    st.plotly_chart(fig_p, use_container_width=True)
 
-            st.altair_chart(c1 & (c2 + line_buy + line_sell) & c3, use_container_width=True)
-        
-        with log_ph.container():
-            if st.session_state.trades:
-                st.subheader("Transaction Log")
-                tdf = pd.DataFrame(st.session_state.trades).sort_values(by="Time", ascending=False)
-                st.dataframe(tdf.style.format({"Price": "${:,.2f}", "PnL": "${:,.2f}"}), use_container_width=True)
+    # 2. INDICATORS SIDE-BY-SIDE
+    col_l, col_r = st.columns(2)
+    with col_l:
+        fig_r = go.Figure(go.Scatter(x=df['time'], y=df['rsi'], line=dict(color=ICE_WHITE, width=1.5)))
+        fig_r.add_hrect(y0=65, y1=100, fillcolor=WS_RED, opacity=0.1, line_width=0)
+        fig_r.add_hrect(y0=0, y1=35, fillcolor=WS_GREEN, opacity=0.1, line_width=0)
+        fig_r.add_hline(y=65, line_dash="dash", line_color=WS_RED, line_width=1)
+        fig_r.add_hline(y=35, line_dash="dash", line_color=WS_GREEN, line_width=1)
+        fig_r.update_layout(title="RSI", title_font=dict(color='#666', size=10), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', margin=dict(t=25, b=0, l=0, r=0), height=200, xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', range=[0, 100]))
+        st.plotly_chart(fig_r, use_container_width=True)
 
-    time.sleep(1)
+    with col_r:
+        fig_m = go.Figure(go.Bar(x=df['time'], y=df['macd_h'], marker_color=[WS_GREEN if v >= 0 else WS_RED for v in df['macd_h']]))
+        fig_m.update_layout(title="MACD", title_font=dict(color='#666', size=10), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', margin=dict(t=25, b=0, l=0, r=0), height=200, xaxis=dict(showgrid=False, visible=False), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'))
+        st.plotly_chart(fig_m, use_container_width=True)
+else:
+    st.error("UPLINK INTERRUPTED.")
