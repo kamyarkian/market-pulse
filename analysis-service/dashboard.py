@@ -18,12 +18,13 @@ load_dotenv(dotenv_path=env_path)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+SYSTEM_PASSWORD = os.getenv('SYSTEM_PASSWORD')
 
 # ==========================================
 # 2. SYSTEM CONFIGURATION (WALL STREET)
 # ==========================================
 SYSTEM_NAME = "YAMIN"
-VERSION = "v18.0 (LIQUIDITY TRACKER)"
+VERSION = "v19.1 (SECURED / WALL STREET)"
 AUTHOR = "KAMYAR KIAN . IO"
 
 # INSTITUTIONAL COLOR PALETTE
@@ -33,8 +34,8 @@ DEEP_BLUE = "#2962FF"
 BG_VOID = "#050608"
 
 # WALL STREET CLASSIC GREEN & RED
-WS_GREEN = "#089981" # Institutional Green
-WS_RED = "#F23645"   # Institutional Red
+WS_GREEN = "#089981" 
+WS_RED = "#F23645"   
 
 # ==========================================
 # 3. UI ARCHITECTURE (CSS)
@@ -47,13 +48,10 @@ st.markdown(f"""
     
     .stApp {{ background-color: {BG_VOID}; font-family: 'Rajdhani', sans-serif; overflow: hidden; }}
     
-    /* 1. YAMIN CENTERED + PULSE ALIGNMENT */
+    /* YAMIN CENTERED TITLE */
     .title-flex-container {{
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-top: 5px;
-        margin-bottom: 20px;
+        display: flex; align-items: center; justify-content: center;
+        margin-top: 5px; margin-bottom: 20px;
     }}
     h1 {{
         font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 85px !important;
@@ -72,30 +70,15 @@ st.markdown(f"""
         100% {{ transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); }}
     }}
 
-    /* 2. LIQUIDITY CLOCKS (PRO 4-CITY GRID) */
+    /* LIQUIDITY CLOCKS */
     .vertical-clocks {{
-        position: absolute;
-        top: 5px; 
-        right: 15px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px; 
-        font-family: 'JetBrains Mono';
-        font-size: 14px; 
-        color: #444; /* Default Dim */
-        text-align: right;
-        z-index: 100;
-        background: rgba(0,0,0,0.4);
-        padding: 12px 18px;
-        border-right: 3px solid {ACCENT_CYAN};
-        border-radius: 4px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        position: absolute; top: 5px; right: 15px; display: flex; flex-direction: column;
+        gap: 8px; font-family: 'JetBrains Mono'; font-size: 14px; color: #444; 
+        text-align: right; z-index: 100; background: rgba(0,0,0,0.4); padding: 12px 18px;
+        border-right: 3px solid {ACCENT_CYAN}; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }}
-    
-    /* Dynamic Clock Colors based on Market Status */
     .market-open {{ color: #888; }}
     .market-open b {{ color: {WS_GREEN}; font-weight: 800; font-size: 16px; margin-left: 10px; text-shadow: 0 0 10px rgba(8, 153, 129, 0.5); }}
-    
     .market-closed {{ color: #444; }}
     .market-closed b {{ color: #555; font-weight: 800; font-size: 16px; margin-left: 10px; }}
 
@@ -115,28 +98,54 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 4. BACKEND LOGIC (Market Liquidity Hours)
+# 4. SECURITY GATE (AUTHENTICATION - FIXED UI)
+# ==========================================
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    # Using Native Streamlit Columns to Center the Login
+    _, col_center, _ = st.columns([1, 1, 1])
+    
+    with col_center:
+        st.markdown("<br><br><br><br>", unsafe_allow_html=True) # Spacer
+        st.markdown(f"""
+            <div style='text-align: center;'>
+                <span style='font-size: 60px;'>🐺</span>
+                <h1 style='font-size: 45px !important; letter-spacing: 5px;'>{SYSTEM_NAME} CORE</h1>
+                <p style='color: {ACCENT_CYAN}; font-family: JetBrains Mono; margin-bottom: 20px;'>SECURE NETWORK CONNECTION REQUIRED</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        pwd = st.text_input("COMMAND CODE", type="password", label_visibility="collapsed", placeholder="ENTER COMMAND CODE...")
+        
+        if st.button("INITIALIZE UPLINK", use_container_width=True):
+            if pwd == SYSTEM_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("ACCESS DENIED. INTRUDER LOGGED.")
+    
+    st.stop() # HALT ALL EXECUTION HERE UNTIL AUTHENTICATED
+
+# ==========================================
+# 5. BACKEND LOGIC (Market Liquidity Hours)
 # ==========================================
 def get_market_clocks():
     utc = datetime.now(timezone.utc)
-    
-    # Define Time Deltas
     tz_syd = utc + timedelta(hours=11)
     tz_tyo = utc + timedelta(hours=9)
     tz_lon = utc
     tz_nyc = utc - timedelta(hours=5)
 
-    # Market Open Logic (Roughly standard business hours for liquidity)
     def is_open(tz_time, open_h, close_h):
         return open_h <= tz_time.hour < close_h and tz_time.weekday() < 5 # Mon-Fri
 
-    # Generate 12h format strings (e.g., "10:30" without AM/PM)
-    # Check if market is open
     return [
         {"name": "SYDNEY", "time": tz_syd.strftime("%I:%M"), "open": is_open(tz_syd, 10, 16)},
         {"name": "TOKYO", "time": tz_tyo.strftime("%I:%M"), "open": is_open(tz_tyo, 9, 15)},
         {"name": "LONDON", "time": tz_lon.strftime("%I:%M"), "open": is_open(tz_lon, 8, 16)},
-        {"name": "NEW YORK", "time": tz_nyc.strftime("%I:%M"), "open": is_open(tz_nyc, 9, 16)} # 9:30 simplified to 9
+        {"name": "NEW YORK", "time": tz_nyc.strftime("%I:%M"), "open": is_open(tz_nyc, 9, 16)} 
     ]
 
 def broadcast_signal(msg, token, chat_id):
@@ -154,7 +163,6 @@ def fetch_market_data():
         df = df.reset_index().rename(columns={"Datetime": "time", "Date": "time", "Close": "price", "Open": "open", "High": "high", "Low": "low"})
         df['price'] = df['price'].astype(float)
         
-        # Tech Indicators
         delta = df['price'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -165,7 +173,7 @@ def fetch_market_data():
     except: return pd.DataFrame()
 
 # ==========================================
-# 5. TITAN INTERFACE (PRO EDITION)
+# 6. TITAN INTERFACE (PRO EDITION)
 # ==========================================
 
 df = fetch_market_data()
@@ -180,28 +188,26 @@ with st.sidebar:
     active_chat = TELEGRAM_CHAT_ID
 
     if active_token and active_chat:
-        st.success("SECURE UPLINK ESTABLISHED (ENV)")
+        st.success("SECURE UPLINK ESTABLISHED")
     else:
         st.error("ENV KEYS MISSING")
-        active_token = st.text_input("Enter Bot Token", type="password")
-        active_chat = st.text_input("Enter Chat ID")
 
     if st.button("📡 TEST CONNECTION"):
         if active_token and active_chat:
             try:
                 msg = f"🐺 *YAMIN LIVE FEED*\nSystem Online.\nBTC/CAD: ${current_price:,.2f}"
-                url = f"https://api.telegram.org/bot{active_token}/sendMessage"
-                resp = requests.post(url, json={"chat_id": active_chat, "text": msg, "parse_mode": "Markdown"})
-                if resp.status_code == 200: st.toast("UPLINK SUCCESS", icon="✅")
-                else: st.error("FAILED TO CONNECT")
+                requests.post(f"https://api.telegram.org/bot{active_token}/sendMessage", json={"chat_id": active_chat, "text": msg, "parse_mode": "Markdown"})
+                st.toast("UPLINK SUCCESS", icon="✅")
             except: st.error("NETWORK ERROR")
-        else: st.warning("NEED KEYS")
 
-# --- SMART LIQUIDITY CLOCKS (PRO 4-CITY) ---
+    if st.button("🔒 LOGOUT", use_container_width=True):
+        st.session_state.authenticated = False
+        st.rerun()
+
+# --- SMART LIQUIDITY CLOCKS ---
 clks = get_market_clocks()
 clock_html = "<div class='vertical-clocks'>"
 for city in clks:
-    # Assign green class if market open, gray if closed
     status_class = "market-open" if city["open"] else "market-closed"
     clock_html += f"<div class='{status_class}'>{city['name']} <b>{city['time']}</b></div>"
 clock_html += "</div>"
@@ -220,7 +226,6 @@ c_met1, c_met2, c_sig = st.columns([3, 3, 4])
 if not df.empty:
     last = df.iloc[-1]
     
-    # AI Decision
     decision = "HOLD"; dec_color = "#444"
     if last['rsi'] < 35: 
         decision = "BUY"; dec_color = WS_GREEN
@@ -246,14 +251,11 @@ if not df.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- PERFECT FIT CHARTS (WALL STREET COLORS) ---
-    
-    # 1. MAIN PRICE ACTION
+    # --- PERFECT FIT CHARTS ---
     fig_p = go.Figure(data=[go.Candlestick(x=df['time'], open=df['open'], high=df['high'], low=df['low'], close=df['price'], increasing_line_color=WS_GREEN, decreasing_line_color=WS_RED)])
     fig_p.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#666'), margin=dict(t=0, b=0, l=0, r=0), xaxis=dict(showgrid=False, rangeslider_visible=False, visible=False), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'), height=400)
     st.plotly_chart(fig_p, use_container_width=True)
 
-    # 2. INDICATORS SIDE-BY-SIDE
     col_l, col_r = st.columns(2)
     with col_l:
         fig_r = go.Figure(go.Scatter(x=df['time'], y=df['rsi'], line=dict(color=ICE_WHITE, width=1.5)))
