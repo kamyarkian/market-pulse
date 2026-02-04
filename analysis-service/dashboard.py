@@ -10,10 +10,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # ==========================================
+# 0. PATH CONFIGURATION (CLOUD FIX) 🛠️
+# ==========================================
+# This fixes the "MediaFileStorageError" by finding the exact path of the image
+current_script_path = Path(__file__).parent
+icon_path = current_script_path / "favicon.jpg"
+
+# ==========================================
 # 1. SECURITY & INFRA UPLINK 🔐
 # ==========================================
-current_dir = Path.cwd()
-env_path = current_dir / 'infra' / '.env'
+env_path = current_script_path.parent / 'infra' / '.env' # Adjusted to look one folder up if needed, or use relative
+# If .env is inside 'infra' which is sibling to 'analysis-service', we might need adjustment.
+# Assuming standard structure:
 load_dotenv(dotenv_path=env_path)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -24,7 +32,7 @@ SYSTEM_PASSWORD = os.getenv('SYSTEM_PASSWORD')
 # 2. SYSTEM CONFIGURATION (WALL STREET)
 # ==========================================
 SYSTEM_NAME = "YAMIN"
-VERSION = "v19.2 (SECURED / ENTERPRISE)"
+VERSION = "v19.3 (CLOUD STABLE)"
 AUTHOR = "KAMYAR KIAN . IO"
 
 # INSTITUTIONAL COLOR PALETTE
@@ -40,8 +48,13 @@ WS_RED = "#F23645"
 # ==========================================
 # 3. UI ARCHITECTURE (CSS)
 # ==========================================
-# UPDATE 1: Icon set to favicon.jpg
-st.set_page_config(page_title=f"YAMIN | {AUTHOR}", page_icon="favicon.jpg", layout="wide", initial_sidebar_state="collapsed")
+# UPDATE: Using str(icon_path) ensures the cloud server finds the file
+st.set_page_config(
+    page_title=f"YAMIN | {AUTHOR}", 
+    page_icon=str(icon_path), 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 st.markdown(f"""
     <style>
@@ -49,11 +62,11 @@ st.markdown(f"""
     
     .stApp {{ background-color: {BG_VOID}; font-family: 'Rajdhani', sans-serif; overflow: hidden; }}
     
-    /* UPDATE 2: YAMIN LEFT ALIGNED */
+    /* YAMIN LEFT ALIGNED TITLE */
     .title-flex-container {{
-        display: flex; align-items: center; justify-content: flex-start; /* Changed to LEFT */
+        display: flex; align-items: center; justify-content: flex-start;
         margin-top: 5px; margin-bottom: 20px;
-        padding-left: 10px; /* Added breathing room */
+        padding-left: 10px;
     }}
     h1 {{
         font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 85px !important;
@@ -100,17 +113,16 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 4. SECURITY GATE (AUTHENTICATION - FIXED UI)
+# 4. SECURITY GATE (AUTHENTICATION)
 # ==========================================
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    # Using Native Streamlit Columns to Center the Login
     _, col_center, _ = st.columns([1, 1, 1])
     
     with col_center:
-        st.markdown("<br><br><br><br>", unsafe_allow_html=True) # Spacer
+        st.markdown("<br><br><br><br>", unsafe_allow_html=True) 
         st.markdown(f"""
             <div style='text-align: center;'>
                 <span style='font-size: 60px;'>🐺</span>
@@ -128,7 +140,7 @@ if not st.session_state.authenticated:
             else:
                 st.error("ACCESS DENIED. INTRUDER LOGGED.")
     
-    st.stop() # HALT ALL EXECUTION HERE UNTIL AUTHENTICATED
+    st.stop() 
 
 # ==========================================
 # 5. BACKEND LOGIC (Market Liquidity Hours)
@@ -183,8 +195,12 @@ current_price = df.iloc[-1]['price'] if not df.empty else 0
 
 # --- SIDEBAR ---
 with st.sidebar:
-    # Sidebar Logo (Optional - inside the menu)
-    st.image("favicon.jpg", width=80) 
+    # UPDATE: Using absolute path for the image here as well
+    if icon_path.exists():
+        st.image(str(icon_path), width=80) 
+    else:
+        st.error("ICON NOT FOUND") # Debug fallback
+        
     st.markdown("### 🐺 NEURAL LINK")
     st.caption("TELEGRAM BROADCAST SYSTEM")
     
@@ -217,7 +233,7 @@ for city in clks:
 clock_html += "</div>"
 st.markdown(clock_html, unsafe_allow_html=True)
 
-# --- LEFT ALIGNED TITLE (CONSOLE STYLE) ---
+# --- LEFT ALIGNED TITLE ---
 st.markdown(f"""
     <div class='title-flex-container'>
         <div class='pulse-y'></div><h1>{SYSTEM_NAME}</h1>
