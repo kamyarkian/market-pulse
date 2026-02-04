@@ -24,7 +24,7 @@ SYSTEM_PASSWORD = os.getenv('SYSTEM_PASSWORD')
 # 2. SYSTEM CONFIGURATION (WALL STREET)
 # ==========================================
 SYSTEM_NAME = "YAMIN"
-VERSION = "v19.1 (SECURED / WALL STREET)"
+VERSION = "v19.2 (SECURED / ENTERPRISE)"
 AUTHOR = "KAMYAR KIAN . IO"
 
 # INSTITUTIONAL COLOR PALETTE
@@ -40,7 +40,8 @@ WS_RED = "#F23645"
 # ==========================================
 # 3. UI ARCHITECTURE (CSS)
 # ==========================================
-st.set_page_config(page_title=f"YAMIN | {AUTHOR}", page_icon="🐺", layout="wide", initial_sidebar_state="collapsed")
+# UPDATE 1: Icon set to favicon.jpg
+st.set_page_config(page_title=f"YAMIN | {AUTHOR}", page_icon="favicon.jpg", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown(f"""
     <style>
@@ -48,10 +49,11 @@ st.markdown(f"""
     
     .stApp {{ background-color: {BG_VOID}; font-family: 'Rajdhani', sans-serif; overflow: hidden; }}
     
-    /* YAMIN CENTERED TITLE */
+    /* UPDATE 2: YAMIN LEFT ALIGNED */
     .title-flex-container {{
-        display: flex; align-items: center; justify-content: center;
+        display: flex; align-items: center; justify-content: flex-start; /* Changed to LEFT */
         margin-top: 5px; margin-bottom: 20px;
+        padding-left: 10px; /* Added breathing room */
     }}
     h1 {{
         font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 85px !important;
@@ -181,6 +183,8 @@ current_price = df.iloc[-1]['price'] if not df.empty else 0
 
 # --- SIDEBAR ---
 with st.sidebar:
+    # Sidebar Logo (Optional - inside the menu)
+    st.image("favicon.jpg", width=80) 
     st.markdown("### 🐺 NEURAL LINK")
     st.caption("TELEGRAM BROADCAST SYSTEM")
     
@@ -213,7 +217,7 @@ for city in clks:
 clock_html += "</div>"
 st.markdown(clock_html, unsafe_allow_html=True)
 
-# --- PERFECT CENTERED TITLE ---
+# --- LEFT ALIGNED TITLE (CONSOLE STYLE) ---
 st.markdown(f"""
     <div class='title-flex-container'>
         <div class='pulse-y'></div><h1>{SYSTEM_NAME}</h1>
